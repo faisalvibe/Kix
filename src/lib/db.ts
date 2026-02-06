@@ -1,63 +1,15 @@
-import Database from "better-sqlite3";
-import path from "path";
 import type { Game, GameCreateInput, GameUpdateInput, TelemetryEvent } from "./types";
 import { v4 as uuidv4 } from "uuid";
 
-const DB_PATH = process.env.VERCEL
-  ? path.join("/tmp", "kix.db")
-  : path.join(process.cwd(), "kix.db");
+// ── In-memory store (seeds automatically) ──────────────
 
-let _db: Database.Database | null = null;
+const games: Map<string, Game> = new Map();
+const events: TelemetryEvent[] = [];
 
-function getDb(): Database.Database {
-  if (!_db) {
-    _db = new Database(DB_PATH);
-    _db.pragma("journal_mode = WAL");
-    _db.pragma("foreign_keys = ON");
-    initSchema(_db);
-    seedIfEmpty(_db);
-  }
-  return _db;
-}
+function seed() {
+  if (games.size > 0) return;
 
-function initSchema(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS games (
-      id TEXT PRIMARY KEY,
-      slug TEXT UNIQUE NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      thumbnail_url TEXT NOT NULL DEFAULT '',
-      entry_url TEXT NOT NULL,
-      orientation TEXT NOT NULL DEFAULT 'portrait',
-      status TEXT NOT NULL DEFAULT 'draft',
-      version TEXT NOT NULL DEFAULT '1.0.0',
-      tags TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS events (
-      id TEXT PRIMARY KEY,
-      event_type TEXT NOT NULL,
-      game_id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      payload TEXT NOT NULL DEFAULT '{}',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_games_status ON games(status);
-    CREATE INDEX IF NOT EXISTS idx_games_slug ON games(slug);
-    CREATE INDEX IF NOT EXISTS idx_events_game_id ON events(game_id);
-    CREATE INDEX IF NOT EXISTS idx_events_session_id ON events(session_id);
-  `);
-}
-
-function seedIfEmpty(db: Database.Database) {
-  const count = db.prepare("SELECT COUNT(*) as count FROM games").get() as { count: number };
-  if (count.count > 0) return;
-
-  const games: GameCreateInput[] = [
+  const seedGames: (GameCreateInput & { status: "published" })[] = [
     {
       title: "Color Tap",
       slug: "color-tap",
@@ -67,6 +19,7 @@ function seedIfEmpty(db: Database.Database) {
       orientation: "portrait",
       version: "1.0.0",
       tags: ["arcade", "reflex", "casual"],
+      status: "published",
     },
     {
       title: "Memory Match",
@@ -77,109 +30,97 @@ function seedIfEmpty(db: Database.Database) {
       orientation: "portrait",
       version: "1.0.0",
       tags: ["puzzle", "memory", "casual"],
+      status: "published",
     },
   ];
 
-  const insert = db.prepare(`
-    INSERT INTO games (id, slug, title, description, thumbnail_url, entry_url, orientation, status, version, tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)
-  `);
-
-  for (const g of games) {
-    insert.run(
-      uuidv4(),
-      g.slug,
-      g.title,
-      g.description,
-      g.thumbnail_url,
-      g.entry_url,
-      g.orientation ?? "portrait",
-      g.version ?? "1.0.0",
-      JSON.stringify(g.tags ?? [])
-    );
+  const now = new Date().toISOString();
+  for (const g of seedGames) {
+    const id = uuidv4();
+    games.set(id, {
+      id,
+      slug: g.slug,
+      title: g.title,
+      description: g.description,
+      thumbnail_url: g.thumbnail_url,
+      entry_url: g.entry_url,
+      orientation: g.orientation ?? "portrait",
+      status: g.status,
+      version: g.version ?? "1.0.0",
+      tags: g.tags ?? [],
+      created_at: now,
+      updated_at: now,
+    });
   }
 }
 
-function rowToGame(row: Record<string, unknown>): Game {
-  return {
-    ...row,
-    tags: JSON.parse(row.tags as string),
-  } as Game;
-}
+// Auto-seed on import
+seed();
 
 // ── Public API ──────────────────────────────────────────
 
 export function getPublishedGames(): Game[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM games WHERE status = 'published' ORDER BY created_at DESC")
-    .all() as Record<string, unknown>[];
-  return rows.map(rowToGame);
+  return Array.from(games.values())
+    .filter((g) => g.status === "published")
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export function getAllGames(): Game[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM games ORDER BY created_at DESC")
-    .all() as Record<string, unknown>[];
-  return rows.map(rowToGame);
+  return Array.from(games.values())
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export function getGameById(id: string): Game | null {
-  const row = getDb().prepare("SELECT * FROM games WHERE id = ?").get(id) as Record<string, unknown> | undefined;
-  return row ? rowToGame(row) : null;
+  return games.get(id) ?? null;
 }
 
 export function getGameBySlug(slug: string): Game | null {
-  const row = getDb().prepare("SELECT * FROM games WHERE slug = ?").get(slug) as Record<string, unknown> | undefined;
-  return row ? rowToGame(row) : null;
+  return Array.from(games.values()).find((g) => g.slug === slug) ?? null;
 }
 
 export function createGame(input: GameCreateInput): Game {
+  const existing = getGameBySlug(input.slug);
+  if (existing) throw new Error("UNIQUE constraint failed: games.slug");
+
   const id = uuidv4();
   const now = new Date().toISOString();
-  getDb().prepare(`
-    INSERT INTO games (id, slug, title, description, thumbnail_url, entry_url, orientation, status, version, tags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
-  `).run(
+  const game: Game = {
     id,
-    input.slug,
-    input.title,
-    input.description,
-    input.thumbnail_url,
-    input.entry_url,
-    input.orientation ?? "portrait",
-    input.version ?? "1.0.0",
-    JSON.stringify(input.tags ?? []),
-    now,
-    now
-  );
-  return getGameById(id)!;
+    slug: input.slug,
+    title: input.title,
+    description: input.description,
+    thumbnail_url: input.thumbnail_url,
+    entry_url: input.entry_url,
+    orientation: input.orientation ?? "portrait",
+    status: "draft",
+    version: input.version ?? "1.0.0",
+    tags: input.tags ?? [],
+    created_at: now,
+    updated_at: now,
+  };
+  games.set(id, game);
+  return game;
 }
 
 export function updateGame(id: string, input: GameUpdateInput): Game | null {
-  const existing = getGameById(id);
+  const existing = games.get(id);
   if (!existing) return null;
 
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (input.title !== undefined) { fields.push("title = ?"); values.push(input.title); }
-  if (input.slug !== undefined) { fields.push("slug = ?"); values.push(input.slug); }
-  if (input.description !== undefined) { fields.push("description = ?"); values.push(input.description); }
-  if (input.thumbnail_url !== undefined) { fields.push("thumbnail_url = ?"); values.push(input.thumbnail_url); }
-  if (input.entry_url !== undefined) { fields.push("entry_url = ?"); values.push(input.entry_url); }
-  if (input.orientation !== undefined) { fields.push("orientation = ?"); values.push(input.orientation); }
-  if (input.version !== undefined) { fields.push("version = ?"); values.push(input.version); }
-  if (input.tags !== undefined) { fields.push("tags = ?"); values.push(JSON.stringify(input.tags)); }
-  if (input.status !== undefined) { fields.push("status = ?"); values.push(input.status); }
-
-  if (fields.length === 0) return existing;
-
-  fields.push("updated_at = ?");
-  values.push(new Date().toISOString());
-  values.push(id);
-
-  getDb().prepare(`UPDATE games SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-  return getGameById(id)!;
+  const updated: Game = {
+    ...existing,
+    ...(input.title !== undefined && { title: input.title }),
+    ...(input.slug !== undefined && { slug: input.slug }),
+    ...(input.description !== undefined && { description: input.description }),
+    ...(input.thumbnail_url !== undefined && { thumbnail_url: input.thumbnail_url }),
+    ...(input.entry_url !== undefined && { entry_url: input.entry_url }),
+    ...(input.orientation !== undefined && { orientation: input.orientation }),
+    ...(input.version !== undefined && { version: input.version }),
+    ...(input.tags !== undefined && { tags: input.tags }),
+    ...(input.status !== undefined && { status: input.status }),
+    updated_at: new Date().toISOString(),
+  };
+  games.set(id, updated);
+  return updated;
 }
 
 export function publishGame(id: string): Game | null {
@@ -196,11 +137,14 @@ export function insertEvent(
   sessionId: string,
   payload: Record<string, unknown> = {}
 ): TelemetryEvent {
-  const id = uuidv4();
-  const now = new Date().toISOString();
-  getDb().prepare(`
-    INSERT INTO events (id, event_type, game_id, session_id, payload, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, eventType, gameId, sessionId, JSON.stringify(payload), now);
-  return { id, event_type: eventType, game_id: gameId, session_id: sessionId, payload, created_at: now };
+  const event: TelemetryEvent = {
+    id: uuidv4(),
+    event_type: eventType,
+    game_id: gameId,
+    session_id: sessionId,
+    payload,
+    created_at: new Date().toISOString(),
+  };
+  events.push(event);
+  return event;
 }
