@@ -1,16 +1,26 @@
-import { Redis } from "@upstash/redis";
 import type { Game, GameCreateInput, GameUpdateInput, TelemetryEvent } from "./types";
 import { v4 as uuidv4 } from "uuid";
 
-// ── Redis client ──────────────────────────────────────
+// ── Storage backend ──────────────────────────────────
+// Uses Upstash Redis when configured, falls back to in-memory Map
 
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL || "",
-  token: process.env.KV_REST_API_TOKEN || "",
-});
+const USE_REDIS = !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+
+let redis: import("@upstash/redis").Redis | null = null;
+if (USE_REDIS) {
+  const { Redis } = require("@upstash/redis") as typeof import("@upstash/redis");
+  redis = new Redis({
+    url: process.env.KV_REST_API_URL!,
+    token: process.env.KV_REST_API_TOKEN!,
+  });
+}
+
+// In-memory fallback
+const memStore = new Map<string, Game>();
 
 const GAMES_KEY = "kix:games";
 const SEEDED_KEY = "kix:seeded";
+let memSeeded = false;
 
 // ── Seed data ──────────────────────────────────────────
 
@@ -39,7 +49,26 @@ const SEED_GAMES: (GameCreateInput & { status: "published" })[] = [
   },
 ];
 
+function seedMem(): void {
+  if (memSeeded) return;
+  const now = new Date().toISOString();
+  for (const g of SEED_GAMES) {
+    const id = uuidv4();
+    const game: Game = {
+      id, slug: g.slug, title: g.title, description: g.description,
+      thumbnail_url: g.thumbnail_url, entry_url: g.entry_url,
+      orientation: g.orientation ?? "portrait", status: g.status,
+      version: g.version ?? "1.0.0", tags: g.tags ?? [],
+      created_at: now, updated_at: now,
+    };
+    memStore.set(id, game);
+  }
+  memSeeded = true;
+}
+
 async function ensureSeeded(): Promise<void> {
+  if (!redis) { seedMem(); return; }
+
   const seeded = await redis.get(SEEDED_KEY);
   if (seeded) return;
 
@@ -53,30 +82,25 @@ async function ensureSeeded(): Promise<void> {
   for (const g of SEED_GAMES) {
     const id = uuidv4();
     const game: Game = {
-      id,
-      slug: g.slug,
-      title: g.title,
-      description: g.description,
-      thumbnail_url: g.thumbnail_url,
-      entry_url: g.entry_url,
-      orientation: g.orientation ?? "portrait",
-      status: g.status,
-      version: g.version ?? "1.0.0",
-      tags: g.tags ?? [],
-      created_at: now,
-      updated_at: now,
+      id, slug: g.slug, title: g.title, description: g.description,
+      thumbnail_url: g.thumbnail_url, entry_url: g.entry_url,
+      orientation: g.orientation ?? "portrait", status: g.status,
+      version: g.version ?? "1.0.0", tags: g.tags ?? [],
+      created_at: now, updated_at: now,
     };
     await redis.hset(GAMES_KEY, { [id]: JSON.stringify(game) });
   }
   await redis.set(SEEDED_KEY, "1");
 }
 
-async function getAllGamesMap(): Promise<Record<string, string>> {
+async function getAllGamesRaw(): Promise<Game[]> {
   await ensureSeeded();
-  return (await redis.hgetall(GAMES_KEY)) ?? {};
-}
 
-function parseGames(map: Record<string, string>): Game[] {
+  if (!redis) {
+    return Array.from(memStore.values());
+  }
+
+  const map: Record<string, string> = (await redis.hgetall(GAMES_KEY)) ?? {};
   return Object.values(map).map((v) =>
     typeof v === "string" ? JSON.parse(v) : v
   );
@@ -85,26 +109,30 @@ function parseGames(map: Record<string, string>): Game[] {
 // ── Public API (all async) ──────────────────────────────
 
 export async function getPublishedGames(): Promise<Game[]> {
-  const map = await getAllGamesMap();
-  return parseGames(map)
+  const all = await getAllGamesRaw();
+  return all
     .filter((g) => g.status === "published")
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export async function getAllGames(): Promise<Game[]> {
-  const map = await getAllGamesMap();
-  return parseGames(map).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const all = await getAllGamesRaw();
+  return all.sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export async function getGameById(id: string): Promise<Game | null> {
   await ensureSeeded();
+
+  if (!redis) {
+    return memStore.get(id) ?? null;
+  }
+
   const raw = await redis.hget(GAMES_KEY, id);
   if (!raw) return null;
   return typeof raw === "string" ? JSON.parse(raw) : raw as unknown as Game;
 }
 
 export async function getGameBySlug(slug: string): Promise<Game | null> {
-  const all = await getPublishedGames();
   const allGames = await getAllGames();
   return allGames.find((g) => g.slug === slug) ?? null;
 }
@@ -130,7 +158,12 @@ export async function createGame(input: GameCreateInput): Promise<Game> {
     created_at: now,
     updated_at: now,
   };
-  await redis.hset(GAMES_KEY, { [id]: JSON.stringify(game) });
+
+  if (redis) {
+    await redis.hset(GAMES_KEY, { [id]: JSON.stringify(game) });
+  } else {
+    memStore.set(id, game);
+  }
   return game;
 }
 
@@ -151,7 +184,12 @@ export async function updateGame(id: string, input: GameUpdateInput): Promise<Ga
     ...(input.status !== undefined && { status: input.status }),
     updated_at: new Date().toISOString(),
   };
-  await redis.hset(GAMES_KEY, { [id]: JSON.stringify(updated) });
+
+  if (redis) {
+    await redis.hset(GAMES_KEY, { [id]: JSON.stringify(updated) });
+  } else {
+    memStore.set(id, updated);
+  }
   return updated;
 }
 
@@ -177,7 +215,8 @@ export async function insertEvent(
     payload,
     created_at: new Date().toISOString(),
   };
-  // Fire and forget - don't block on telemetry
-  redis.lpush("kix:events", JSON.stringify(event)).catch(() => {});
+  if (redis) {
+    redis.lpush("kix:events", JSON.stringify(event)).catch(() => {});
+  }
   return event;
 }
