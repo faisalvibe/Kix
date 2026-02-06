@@ -4,15 +4,15 @@ import { v4 as uuidv4 } from "uuid";
 // ── Storage backend ──────────────────────────────────
 // Uses Upstash Redis when configured, falls back to in-memory Map
 
-const USE_REDIS = !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+// Vercel KV uses KV_REST_API_*, direct Upstash uses UPSTASH_REDIS_REST_*
+const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "";
+const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "";
+const USE_REDIS = !!(REDIS_URL && REDIS_TOKEN);
 
 let redis: import("@upstash/redis").Redis | null = null;
 if (USE_REDIS) {
   const { Redis } = require("@upstash/redis") as typeof import("@upstash/redis");
-  redis = new Redis({
-    url: process.env.KV_REST_API_URL!,
-    token: process.env.KV_REST_API_TOKEN!,
-  });
+  redis = new Redis({ url: REDIS_URL, token: REDIS_TOKEN });
 }
 
 // In-memory fallback
