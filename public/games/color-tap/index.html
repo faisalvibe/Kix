@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Color Tap</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #game-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      width: 100%;
+      max-width: 400px;
+      padding: 20px;
+    }
+    .score-bar {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      font-size: 14px;
+      color: #888;
+    }
+    .score-bar .score { color: #fff; font-weight: bold; font-size: 24px; }
+    .prompt {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 10px 0;
+      height: 30px;
+      display: flex;
+      align-items: center;
+    }
+    .color-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      width: 100%;
+      max-width: 300px;
+    }
+    .color-btn {
+      aspect-ratio: 1;
+      border: none;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.1s;
+      font-size: 0;
+    }
+    .color-btn:active { transform: scale(0.92); }
+    .color-btn.wrong { animation: shake 0.3s; }
+    .color-btn.correct { animation: pulse 0.3s; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    .timer-bar {
+      width: 100%;
+      height: 4px;
+      background: #222;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .timer-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, #ec4899);
+      transition: width 0.1s linear;
+    }
+    #start-screen, #game-over-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    #start-screen h1 { font-size: 28px; background: linear-gradient(135deg, #a855f7, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .btn {
+      padding: 12px 32px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:active { transform: scale(0.95); }
+    .hidden { display: none !important; }
+    #game-over-screen .final-score { font-size: 48px; font-weight: bold; }
+    #game-over-screen p { color: #888; }
+  </style>
+</head>
+<body>
+  <div id="game-area">
+    <!-- Start screen -->
+    <div id="start-screen">
+      <h1>Color Tap</h1>
+      <p style="color:#888; text-align:center; font-size:14px;">Tap the color that matches the word.<br>Be fast — the timer is ticking!</p>
+      <button class="btn" onclick="startGame()">Play</button>
+    </div>
+
+    <!-- Game screen -->
+    <div id="game-screen" class="hidden" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:16px;">
+      <div class="score-bar">
+        <div>Score: <span class="score" id="score">0</span></div>
+        <div>Best: <span id="best">0</span></div>
+      </div>
+      <div class="timer-bar"><div class="timer-fill" id="timer-fill"></div></div>
+      <div class="prompt" id="prompt">Tap RED</div>
+      <div class="color-grid" id="color-grid"></div>
+    </div>
+
+    <!-- Game over screen -->
+    <div id="game-over-screen" class="hidden">
+      <p>Game Over</p>
+      <div class="final-score" id="final-score">0</div>
+      <p>Your score</p>
+      <button class="btn" onclick="startGame()">Play Again</button>
+    </div>
+  </div>
+
+  <script>
+    // GameSDK contract
+    window.GameSDK = {
+      _context: null,
+      _running: false,
+      init(ctx) { this._context = ctx; },
+      start() { this._running = true; },
+      pause() { this._running = false; },
+      resume() { this._running = true; },
+      destroy() { this._running = false; clearInterval(timerInterval); }
+    };
+
+    const COLORS = [
+      { name: 'RED', hex: '#ef4444' },
+      { name: 'BLUE', hex: '#3b82f6' },
+      { name: 'GREEN', hex: '#22c55e' },
+      { name: 'YELLOW', hex: '#eab308' },
+      { name: 'PURPLE', hex: '#a855f7' },
+      { name: 'PINK', hex: '#ec4899' },
+    ];
+
+    let score = 0;
+    let best = parseInt(localStorage.getItem('colortap_best') || '0');
+    let targetColor = null;
+    let timeLeft = 100;
+    let timerInterval = null;
+
+    document.getElementById('best').textContent = best;
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function pickRound() {
+      const shuffled = shuffle(COLORS);
+      const roundColors = shuffled.slice(0, 4);
+      targetColor = roundColors[Math.floor(Math.random() * roundColors.length)];
+
+      document.getElementById('prompt').textContent = 'Tap ' + targetColor.name;
+      document.getElementById('prompt').style.color = targetColor.hex;
+
+      const grid = document.getElementById('color-grid');
+      grid.innerHTML = '';
+      roundColors.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'color-btn';
+        btn.style.background = c.hex;
+        btn.onclick = () => handleTap(c, btn);
+        grid.appendChild(btn);
+      });
+    }
+
+    function handleTap(color, btn) {
+      if (color.name === targetColor.name) {
+        btn.classList.add('correct');
+        score++;
+        // Speed up slightly
+        timeLeft = Math.min(timeLeft + 15, 100);
+        document.getElementById('score').textContent = score;
+        setTimeout(() => pickRound(), 150);
+      } else {
+        btn.classList.add('wrong');
+        setTimeout(() => btn.classList.remove('wrong'), 300);
+        timeLeft -= 20;
+        if (timeLeft <= 0) endGame();
+      }
+    }
+
+    function startGame() {
+      score = 0;
+      timeLeft = 100;
+      document.getElementById('score').textContent = '0';
+      document.getElementById('start-screen').classList.add('hidden');
+      document.getElementById('game-over-screen').classList.add('hidden');
+      document.getElementById('game-screen').classList.remove('hidden');
+      pickRound();
+
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (!window.GameSDK._running && window.GameSDK._context) return;
+        timeLeft -= 1.5;
+        document.getElementById('timer-fill').style.width = Math.max(0, timeLeft) + '%';
+        if (timeLeft <= 0) endGame();
+      }, 100);
+    }
+
+    function endGame() {
+      clearInterval(timerInterval);
+      if (score > best) {
+        best = score;
+        localStorage.setItem('colortap_best', best);
+        document.getElementById('best').textContent = best;
+      }
+      document.getElementById('final-score').textContent = score;
+      document.getElementById('game-screen').classList.add('hidden');
+      document.getElementById('game-over-screen').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

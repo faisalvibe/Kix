@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ededed;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  overscroll-behavior: none;
+  overflow: hidden;
+  height: 100dvh;
+  background: #000;
+  color: var(--foreground);
+}
+
+/* Landscape game rotation for portrait-locked phones */
+.landscape-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (orientation: portrait) {
+  .landscape-game {
+    transform: rotate(90deg);
+    transform-origin: center center;
+    width: 100dvh;
+    height: 100dvw;
+  }
+}
+
+/* Smooth transitions */
+.transition-transform {
+  will-change: transform;
+}
+
+/* Scrollbar hidden */
+::-webkit-scrollbar {
+  display: none;
+}
