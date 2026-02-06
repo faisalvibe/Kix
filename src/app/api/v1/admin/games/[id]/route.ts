@@ -10,7 +10,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (authError) return authError;
 
   const { id } = await params;
-  const game = getGameById(id);
+  const game = await getGameById(id);
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   return NextResponse.json({ game });
 }
@@ -21,7 +21,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { id } = await params;
   const body = await request.json() as GameUpdateInput;
-  const game = updateGame(id, body);
+  const game = await updateGame(id, body);
 
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   return NextResponse.json({ game });

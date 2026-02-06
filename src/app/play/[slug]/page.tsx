@@ -10,7 +10,7 @@ interface Props {
 
 export default async function PlayPage({ params }: Props) {
   const { slug } = await params;
-  const game = getGameBySlug(slug);
+  const game = await getGameBySlug(slug);
 
   if (!game || game.status !== "published") {
     notFound();

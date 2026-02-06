@@ -3,7 +3,7 @@ import GameFeed from "@/components/GameFeed";
 
 export const dynamic = "force-dynamic";
 
-export default function Home() {
-  const games = getPublishedGames();
+export default async function Home() {
+  const games = await getPublishedGames();
   return <GameFeed games={games} />;
 }

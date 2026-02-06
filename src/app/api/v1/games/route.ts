@@ -4,6 +4,6 @@ import { getPublishedGames } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const games = getPublishedGames();
+  const games = await getPublishedGames();
   return NextResponse.json({ games });
 }

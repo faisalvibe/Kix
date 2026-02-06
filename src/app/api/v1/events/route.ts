@@ -31,6 +31,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const event = insertEvent(event_type, game_id, session_id, payload ?? {});
+  const event = await insertEvent(event_type, game_id, session_id, payload ?? {});
   return NextResponse.json({ event }, { status: 201 });
 }
