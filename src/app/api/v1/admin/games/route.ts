@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const authError = requireAdmin(request);
   if (authError) return authError;
 
-  const games = getAllGames();
+  const games = await getAllGames();
   return NextResponse.json({ games });
 }
 
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const game = createGame(body);
+    const game = await createGame(body);
     return NextResponse.json({ game }, { status: 201 });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";

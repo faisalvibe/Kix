@@ -9,7 +9,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (authError) return authError;
 
   const { id } = await params;
-  const game = archiveGame(id);
+  const game = await archiveGame(id);
 
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   return NextResponse.json({ game });
