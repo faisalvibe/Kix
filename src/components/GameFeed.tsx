@@ -4,11 +4,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import type { Game } from "@/lib/types";
 import { getSessionId, trackEvent } from "@/lib/session";
 
-interface GameFeedProps {
-  games: Game[];
-}
-
-export default function GameFeed({ games }: GameFeedProps) {
+export default function GameFeed() {
+  const [games, setGames] = useState<Game[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [iframeLoaded, setIframeLoaded] = useState<Record<string, boolean>>({});
@@ -16,6 +14,15 @@ export default function GameFeed({ games }: GameFeedProps) {
   const touchDeltaY = useRef(0);
   const isAnimating = useRef(false);
   const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
+
+  // Fetch games from API client-side (avoids SSR caching issues)
+  useEffect(() => {
+    fetch("/api/v1/games")
+      .then((res) => res.json())
+      .then((data) => setGames(data.games ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const currentGame = games[currentIndex];
   const isPlaying = playingId === currentGame?.id;
@@ -128,6 +135,14 @@ export default function GameFeed({ games }: GameFeedProps) {
       trackEvent("game_card_viewed", games[0].id);
     }
   }, [games]);
+
+  if (loading) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-black">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-purple-500" />
+      </div>
+    );
+  }
 
   if (games.length === 0) {
     return (
