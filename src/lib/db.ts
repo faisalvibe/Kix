@@ -3,7 +3,9 @@ import path from "path";
 import type { Game, GameCreateInput, GameUpdateInput, TelemetryEvent } from "./types";
 import { v4 as uuidv4 } from "uuid";
 
-const DB_PATH = path.join(process.cwd(), "kix.db");
+const DB_PATH = process.env.VERCEL
+  ? path.join("/tmp", "kix.db")
+  : path.join(process.cwd(), "kix.db");
 
 let _db: Database.Database | null = null;
 
