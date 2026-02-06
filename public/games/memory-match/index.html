@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Memory Match</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #game-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+      max-width: 400px;
+      padding: 20px;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      font-size: 14px;
+      color: #888;
+    }
+    .stats span { color: #fff; font-weight: 600; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      width: 100%;
+      max-width: 320px;
+    }
+    .card {
+      aspect-ratio: 1;
+      border: none;
+      border-radius: 12px;
+      background: #1a1a2e;
+      cursor: pointer;
+      font-size: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.3s, background 0.3s;
+      transform-style: preserve-3d;
+    }
+    .card:active { transform: scale(0.95); }
+    .card.flipped {
+      background: #16213e;
+      transform: rotateY(180deg);
+    }
+    .card.matched {
+      background: #1a3a1a;
+      transform: scale(0.95);
+      opacity: 0.7;
+    }
+    .card .front {
+      display: none;
+      transform: rotateY(180deg);
+    }
+    .card.flipped .front,
+    .card.matched .front { display: flex; }
+    .card .back {
+      color: #333;
+      font-size: 20px;
+    }
+    .card.flipped .back,
+    .card.matched .back { display: none; }
+    #start-screen, #win-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    #start-screen h1 {
+      font-size: 28px;
+      background: linear-gradient(135deg, #3b82f6, #22c55e);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .btn {
+      padding: 12px 32px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #3b82f6, #22c55e);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:active { transform: scale(0.95); }
+    .hidden { display: none !important; }
+    #win-screen .moves-count { font-size: 48px; font-weight: bold; }
+    #win-screen p { color: #888; }
+    .stars { font-size: 32px; letter-spacing: 4px; }
+  </style>
+</head>
+<body>
+  <div id="game-area">
+    <!-- Start screen -->
+    <div id="start-screen">
+      <h1>Memory Match</h1>
+      <p style="color:#888; text-align:center; font-size:14px;">Flip cards to find matching pairs.<br>Try to finish in as few moves as possible!</p>
+      <button class="btn" onclick="startGame()">Play</button>
+    </div>
+
+    <!-- Game screen -->
+    <div id="game-screen" class="hidden" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:16px;">
+      <div class="stats">
+        <div>Moves: <span id="moves">0</span></div>
+        <div>Pairs: <span id="pairs">0</span>/8</div>
+        <div>Time: <span id="time">0:00</span></div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <!-- Win screen -->
+    <div id="win-screen" class="hidden">
+      <p>You Win!</p>
+      <div class="moves-count" id="final-moves">0</div>
+      <p>moves</p>
+      <div class="stars" id="stars"></div>
+      <div id="time-result" style="color:#888;font-size:14px;"></div>
+      <button class="btn" onclick="startGame()">Play Again</button>
+    </div>
+  </div>
+
+  <script>
+    // GameSDK contract
+    window.GameSDK = {
+      _context: null,
+      _running: false,
+      init(ctx) { this._context = ctx; },
+      start() { this._running = true; },
+      pause() { this._running = false; },
+      resume() { this._running = true; },
+      destroy() { this._running = false; clearInterval(gameTimer); }
+    };
+
+    const EMOJIS = ['🎮', '🚀', '⚡', '🔥', '💎', '🎯', '🌟', '🎪'];
+    let cards = [];
+    let flipped = [];
+    let matched = 0;
+    let moves = 0;
+    let locked = false;
+    let gameTimer = null;
+    let seconds = 0;
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function startGame() {
+      matched = 0;
+      moves = 0;
+      seconds = 0;
+      flipped = [];
+      locked = false;
+
+      document.getElementById('moves').textContent = '0';
+      document.getElementById('pairs').textContent = '0';
+      document.getElementById('time').textContent = '0:00';
+
+      document.getElementById('start-screen').classList.add('hidden');
+      document.getElementById('win-screen').classList.add('hidden');
+      document.getElementById('game-screen').classList.remove('hidden');
+
+      // Create card pairs
+      cards = shuffle([...EMOJIS, ...EMOJIS]);
+
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+
+      cards.forEach((emoji, i) => {
+        const card = document.createElement('button');
+        card.className = 'card';
+        card.dataset.index = i;
+        card.dataset.emoji = emoji;
+        card.innerHTML = `<span class="back">?</span><span class="front">${emoji}</span>`;
+        card.onclick = () => flipCard(card);
+        grid.appendChild(card);
+      });
+
+      clearInterval(gameTimer);
+      gameTimer = setInterval(() => {
+        if (!window.GameSDK._running && window.GameSDK._context) return;
+        seconds++;
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        document.getElementById('time').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+      }, 1000);
+    }
+
+    function flipCard(card) {
+      if (locked) return;
+      if (card.classList.contains('flipped') || card.classList.contains('matched')) return;
+      if (flipped.length >= 2) return;
+
+      card.classList.add('flipped');
+      flipped.push(card);
+
+      if (flipped.length === 2) {
+        moves++;
+        document.getElementById('moves').textContent = moves;
+        locked = true;
+
+        const [a, b] = flipped;
+        if (a.dataset.emoji === b.dataset.emoji) {
+          setTimeout(() => {
+            a.classList.add('matched');
+            b.classList.add('matched');
+            a.classList.remove('flipped');
+            b.classList.remove('flipped');
+            matched++;
+            document.getElementById('pairs').textContent = matched;
+            flipped = [];
+            locked = false;
+
+            if (matched === EMOJIS.length) winGame();
+          }, 400);
+        } else {
+          setTimeout(() => {
+            a.classList.remove('flipped');
+            b.classList.remove('flipped');
+            flipped = [];
+            locked = false;
+          }, 800);
+        }
+      }
+    }
+
+    function winGame() {
+      clearInterval(gameTimer);
+      document.getElementById('final-moves').textContent = moves;
+
+      // Star rating based on moves
+      let stars = '';
+      if (moves <= 12) stars = '⭐⭐⭐';
+      else if (moves <= 18) stars = '⭐⭐';
+      else stars = '⭐';
+      document.getElementById('stars').textContent = stars;
+
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      document.getElementById('time-result').textContent = 'Time: ' + m + ':' + (s < 10 ? '0' : '') + s;
+
+      document.getElementById('game-screen').classList.add('hidden');
+      document.getElementById('win-screen').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

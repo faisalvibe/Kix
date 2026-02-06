@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <rect width="400" height="400" rx="40" fill="#0a0a0a"/>
+  <g transform="translate(50, 50)">
+    <rect x="0" y="0" width="65" height="85" rx="10" fill="#1a1a2e"/>
+    <rect x="80" y="0" width="65" height="85" rx="10" fill="#16213e"/>
+    <text x="112" y="52" text-anchor="middle" font-size="32">🎮</text>
+    <rect x="160" y="0" width="65" height="85" rx="10" fill="#1a1a2e"/>
+    <rect x="240" y="0" width="65" height="85" rx="10" fill="#16213e"/>
+    <text x="272" y="52" text-anchor="middle" font-size="32">🚀</text>
+    <rect x="0" y="100" width="65" height="85" rx="10" fill="#16213e"/>
+    <text x="32" y="152" text-anchor="middle" font-size="32">💎</text>
+    <rect x="80" y="100" width="65" height="85" rx="10" fill="#1a1a2e"/>
+    <rect x="160" y="100" width="65" height="85" rx="10" fill="#1a1a2e"/>
+    <rect x="240" y="100" width="65" height="85" rx="10" fill="#16213e"/>
+    <text x="272" y="152" text-anchor="middle" font-size="32">⚡</text>
+    <rect x="0" y="200" width="65" height="85" rx="10" fill="#1a1a2e"/>
+    <rect x="80" y="200" width="65" height="85" rx="10" fill="#1a1a2e"/>
+    <rect x="160" y="200" width="65" height="85" rx="10" fill="#16213e"/>
+    <text x="192" y="252" text-anchor="middle" font-size="32">🎯</text>
+    <rect x="240" y="200" width="65" height="85" rx="10" fill="#1a1a2e"/>
+  </g>
+  <text x="200" y="375" text-anchor="middle" fill="white" font-family="system-ui" font-size="20" font-weight="bold" opacity="0.9">MEMORY MATCH</text>
+</svg>
